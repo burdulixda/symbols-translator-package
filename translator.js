@@ -1,71 +1,48 @@
-function parseAttributes(str) {
-  const attributes = {};
-  str
-    .trim()
-    .split(/\s+/)
-    .forEach((attr) => {
-      const [key, value] = attr.split("=");
-      if (key && value) {
-        attributes[key] = value.replace(/['"]/g, "");
-      }
-    });
-  return attributes;
-}
+const jsdom = require("jsdom");
+const { JSDOM } = jsdom;
 
-function parseStyle(styleStr) {
-  const styles = {};
-  styleStr.split(";").forEach((style) => {
-    const [key, value] = style.split(":");
-    if (key && value) {
-      styles[key.trim()] = value.trim();
-    }
-  });
-  return styles;
-}
+const toCamelCase = (str) =>
+  str.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
 
-function translator(html, returnJson = true) {
-  const stack = [];
-  let currentObject = { children: [] };
+const htmlStringToJson = (element) => {
+  const jsonElement = { tag: element.tagName.toLowerCase() };
+  const directTextContent = Array.from(element.childNodes)
+    .filter(({ nodeType }) => nodeType === 3)
+    .map(({ nodeValue }) => nodeValue.trim())
+    .join(" ")
+    .trim();
 
-  html.replace(/<([^>]+)>|([^<]+)/g, (_, tag, text) => {
-    if (text) {
-      currentObject.text = text.trim();
-    } else if (tag.startsWith("/")) {
-      currentObject = stack.pop();
-    } else {
-      const newObject = { children: [] };
-      const [tagName, ...attrs] = tag.split(/\s+/);
+  if (directTextContent) jsonElement.text = directTextContent;
+  if (element.id) jsonElement.id = element.id;
+  if (element.className) jsonElement.class = element.className;
 
-      newObject.tag = tagName;
+  const cssText = element.style.cssText;
+  if (cssText) {
+    const style = Object.fromEntries(
+      cssText
+        .split(";")
+        .filter(Boolean)
+        .map((item) => {
+          const [key, value] = item.trim().split(": ");
+          return [toCamelCase(key), value.replace(/;$/, "")];
+        })
+    );
+    jsonElement.style = style;
+  }
 
-      attrs.forEach((attr) => {
-        if (attr.startsWith("style")) {
-          const [, styleStr] = attr.split("=");
-          newObject.style = parseStyle(styleStr.replace(/['"]/g, ""));
-        } else if (attr.includes("=")) {
-          const { id, class: className } = parseAttributes(attr);
-          if (id) newObject.id = id;
-          if (className) newObject.class = className;
-        }
-      });
+  const childElements = Array.from(element.childNodes).filter(
+    ({ nodeType }) => nodeType === 1
+  );
+  if (childElements.length) {
+    jsonElement.children = childElements.map(htmlStringToJson);
+  }
 
-      if (currentObject) {
-        currentObject.children.push(newObject);
-        stack.push(currentObject);
-      }
+  return jsonElement;
+};
 
-      currentObject = newObject;
-    }
-
-    return "";
-  });
-
-  const output =
-    currentObject.children.length > 0
-      ? currentObject.children[0]
-      : currentObject;
-
-  return returnJson ? JSON.stringify(output, null, 2) : output;
+function translator(htmlContent) {
+  const htmlDom = new JSDOM(htmlContent);
+  return htmlStringToJson(htmlDom.window.document.body.firstChild);
 }
 
 module.exports = translator;
