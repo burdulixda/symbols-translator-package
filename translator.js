@@ -40,9 +40,11 @@ const htmlStringToJson = (element) => {
   return jsonElement;
 };
 
-function translator(htmlContent) {
+function translator(htmlContent, returnJson = true) {
   const htmlDom = new JSDOM(htmlContent);
-  return htmlStringToJson(htmlDom.window.document.body.firstChild);
+  const context = htmlDom.window.document.body.firstChild;
+  const output = htmlStringToJson(context);
+  return returnJson ? JSON.stringify(output, null, 2) : output;
 }
 
 module.exports = translator;
